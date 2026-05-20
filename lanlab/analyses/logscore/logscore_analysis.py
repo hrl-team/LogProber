@@ -2,7 +2,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from lanlab.analyses.analysis import Analysis
-from lanlab.analyses.logscore.logscore_model import ExponentialModel
 
 def init_sequence(seq):
     """ Replace the first logprob by 0 """
@@ -30,16 +29,15 @@ def plot_loggraph(logprobs,tokens=None,normalize=False):
     plt.ylabel('Cumulative logprobability')
 
 class LogScoreAnalysis(Analysis):
-    def __init__(self,*args,model_class=ExponentialModel,**kwargs):
-        self.model_class = model_class
+    def __init__(self,*args,**kwargs):
         self.data = []
 
         super().__init__(*args,**kwargs)
 
-    def run(self,study):
+    def run(self,study,percent_cut=0):
         for i in range(study.data.shape[0]): #Iterate over questions
             tokens = study.data[i][0][0]['tokens']
-            logprobs = init_sequence(study.data[i][0][0]['logp'])
+            logprobs = init_sequence(study.data[i][0][0]['logp'])[:-1]
             if tokens[0] == '<s>':
                 tokens = tokens[1:]
                 logprobs = logprobs[1:]
@@ -50,11 +48,12 @@ class LogScoreAnalysis(Analysis):
                 logprobs = logprobs[:i]
             except ValueError:
                 pass
-            model = self.model_class()
-            x = np.array(range(len(logprobs)))/len(logprobs)
-            y = np.cumsum(logprobs)/len(logprobs)
-            model.fit(x,y)
-            self.data.append((tokens,logprobs,model))
+            idxs = logprobs.argsort()
+            nb_cut = np.ceil(percent_cut*len(logprobs))
+            for i in range(int(nb_cut)): #S
+                logprobs[idxs[i]] = 0
+            score = np.cumsum(np.sort(logprobs)[::-1]).sum()/len(logprobs)
+            self.data.append((tokens,logprobs,score))
 
     def plot_comparison(self):
         fig = plt.figure()

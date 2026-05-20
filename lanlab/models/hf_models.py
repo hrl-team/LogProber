@@ -8,7 +8,7 @@ import os
 import time
 
 from lanlab.models.model import Model
-from lanlab.models.openai_models import segment_from_OPENAICompletion
+from lanlab.models.openai_models import sequence_from_OPENAICompletion
 from lanlab.data_management.batch.sequence import Sequence
 from lanlab.models.model import ModelConfig
 import requests
@@ -37,14 +37,14 @@ def dict_to_openai(token_ids,logits,tokenizer,temperature,stop,return_logits=Fal
     generated_tokens_logp = [lprobs[token_id].item() for lprobs,token_id in zip(logprobs,token_ids[1:])]
 
     #Translate the token ids into text
-    generated_tokens = [tokenizer.convert_ids_to_tokens([token_id])[0].replace('▁',' ').replace('Ġ',' ') for token_id in token_ids]
+    generated_tokens = [tokenizer.convert_ids_to_tokens([token_id])[0].replace('▁',' ').replace('Ġ',' ') for token_id in token_ids]
     generated_sequence = (''.join(generated_tokens))
     
     #Top logp computations
     top_logp = []
     for lprobs in logprobs:
         best_token_ids = lprobs.argsort()[-nb_logprobs:]
-        top_logp.append({tokenizer.convert_ids_to_tokens([token_id.item()])[0].replace('▁',' ').replace('Ġ',' '):lprobs[token_id.item()].item() for token_id in best_token_ids})
+        top_logp.append({tokenizer.convert_ids_to_tokens([token_id.item()])[0].replace('▁',' ').replace('Ġ',' '):lprobs[token_id.item()].item() for token_id in best_token_ids})
 
     #Outputs
     tokens_logprobs = [None] + generated_tokens_logp
@@ -311,7 +311,7 @@ class HFModel(Model):
         answer['model'] = self.name
         if self['return_logits']:
             answer['logits'] = np.array(answer['choices'][0]['logprobs']['logits'],np.float16)
-        segment = segment_from_OPENAICompletion(answer)
+        segment = sequence_from_OPENAICompletion(answer)
         return sequence + segment
 
     def read(self,sequence,config=None):
@@ -324,7 +324,7 @@ class HFModel(Model):
         data = {'prompt':prompt,'logprobs':5,'echo':True,**config.to_dict()}
         answer = requests.post('http://127.0.0.1:'+str(self.port)+'/completions',json=data).json()
         answer['model'] = self.name
-        sequence = segment_from_OPENAICompletion(answer)
+        sequence = sequence_from_OPENAICompletion(answer)
         return sequence
 
 class AutoModel(HFModel):
@@ -354,6 +354,49 @@ class AutoModel(HFModel):
         else:# 'llama' in name or 'checkpoint' in name or 'alpaca' in name or 'wizard' in name or 'vicuna' in name or 'chimera' in name or 'baize' in name or 'guanaco' in name:
             from transformers import LlamaForCausalLM
             hf_model = LlamaForCausalLM.from_pretrained(self.model_path)
+        #else:
+        #    from transformers import AutoModel
+        #    hf_model = AutoModel.from_pretrained(self.model_path)
+
+        return hf_tokenizer,hf_model
+
+    @property
+    def name(self):
+        return self.model_path.split('/')[-1]
+
+class AutoUnslothModel(HFModel):
+    def load_model(self):
+
+        #Load the model
+        name = self.name
+
+        from unsloth import FastLanguageModel
+        from transformers import AutoModel, AutoTokenizer
+        
+        #hf_tokenizer = AutoTokenizer.from_pretrained(self.model_path)
+        #hf_tokenizer.pad_token = '<s>'
+
+        hf_model, hf_tokenizer = FastLanguageModel.from_pretrained(
+            self.model_path,load_in_4bit=False,resize_model_vocab = 151666)
+        hf_model = FastLanguageModel.for_inference(hf_model)
+        
+        #if 't5' in name:
+        #    hf_model = T5ForConditionalGeneration.from_pretrained(os.path.join('..','..','model',name)).to(device)
+        '''if 'stablelm' in name:
+            from transformers import AutoModelForCausalLM
+            hf_model = AutoModelForCausalLM.from_pretrained(self.model_path)
+        elif 'Cerebras' in name:
+            from transformers import GPT2LMHeadModel
+            hf_model = GPT2LMHeadModel.from_pretrained(self.model_path)
+        elif 'pythia' in name or 'dolly' in name:
+            from transformers import GPTNeoXForCausalLM
+            hf_model = GPTNeoXForCausalLM.from_pretrained(self.model_path)
+        elif 'bloom' in name or 'phoenix-inst-chat' in name:
+            from transformers import BloomForCausalLM
+            hf_model = BloomForCausalLM.from_pretrained(self.model_path)
+        else:# 'llama' in name or 'checkpoint' in name or 'alpaca' in name or 'wizard' in name or 'vicuna' in name or 'chimera' in name or 'baize' in name or 'guanaco' in name:
+            from transformers import LlamaForCausalLM
+            hf_model = LlamaForCausalLM.from_pretrained(self.model_path)'''
         #else:
         #    from transformers import AutoModel
         #    hf_model = AutoModel.from_pretrained(self.model_path)
