@@ -4,23 +4,26 @@
 
 📖 paper : https://www.arxiv.org/abs/2408.14352
 
-🔬 This repository contains the code for replicating figures in the paper and is given for transparency and replication purposes and may not be fit for production environments in terms of optimization requirements.
+🔬 This repository contains the code for replicating all the results presented in the paper (figures and data) and is given for transparency and replication purposes.
 
-🌐 We encourage people that are interested in LogProber to use the colab demo that implements the algorithm in a simple and versatile manner.
+🌐 We also encourage people that are interested in LogProber to use the colab demo that implements the algorithm in a light manner.
 colab demo : https://colab.research.google.com/drive/1GDbmEMmCVEOwhYk6-1AothdXeAlnqZ_j?usp=copy
 
 ## Step by step installation instructions
 This repository contains pre-computed data to rerun the figures but also the code for rebuilding the pre-computed data. A cuda compatible GPU is required to rebuild the data.
 
-- Install the dependencies (for both figures and rebuilding data)
+- Install the dependencies (for both replicating figures and recomputing data from scratch)
 ```
 pip install -r requirements.txt
 ```
 
-- Download LLMs (only for rebuilding data) - for simplicity run these commands in a LLM folder such that it creates folders LogProber/LLMs/llama-7b and LogProber/LLMs/Qwen2.5-32B-Instruct.
+- Download LLMs (only for recomputing data from scratch)
 ```
+mkdir LLMs
+cd LLMs
 git clone https://huggingface.co/huggyllama/llama-7b #Download Llama LLM (you need to be granted access by meta AI - see description of the model)
 git clone https://huggingface.co/unsloth/Qwen2.5-32B-Instruct #Download Qwen LLM
+cd ..
 ``` 
 
 
@@ -30,14 +33,14 @@ This project proposes a method to estimate contamination in language models usin
 This research used 3 frameworks: this repository (referred to as the logprober repository contains the code used to run the contamination detection algorithm), the stanford_alpaca respository contains the code for contaminating models (and then verifying how well LogProber detects this contamination). Finally CDD-TED4LLMs is a repository implementing a classical state of the art method for detecting contamination on answers and this code is used to compare with LogProber results. For the sake of simplicity all the code is included in this repository but some disclaimers are included at the beginning of files to indicate where the code comes from in case it wasn't built by other people.
 
 Datasets and splits are already precomputed in the inputs folder. This includes datasets about CRT experiments with format 
-- [CONDITION]\_[NEW/OLD]\_crt.json containing data formatted for each training condition "qa", "a", "q" and the dataset "alpaca_data.json" for condition std. NEW/OLD corresponds to the version of CRT. These dataset include corresponding CRT items duplicated 10 times each, alpaca training data and 70 items from the CF dataset from this paper https://www.nature.com/articles/s44271-024-00091-8 (the one that defined new CRT) - they were introduced for running additional experiments that were not included in the final version of the paper and here only consist in additional data to the 10,000 alpaca training data. 
+- [CONDITION]\_[new/old]\_crt.json containing data formatted for each training condition "qa", "a", "q" and the dataset "alpaca_data.json" for condition std. NEW/OLD corresponds to the version of CRT. These dataset include corresponding CRT items duplicated 10 times each, alpaca training data and 70 items from the CF dataset from this paper https://www.nature.com/articles/s44271-024-00091-8 (the one that defined new CRT) - they were introduced for running additional experiments that were not included in the final version of the paper and here only consist in additional data to the 10,000 alpaca training data. 
 - [ORIGINAL_DATASET]\_dataset\_[CONDITION].json. ORIGINAL_DATASET can be "mmlu" or "code2" and CONDITION which can be "qa","a","q" or "std" (see paper Table 1). They consist in 100 randomly chosen items duplicated 100 times and 10,000 randomly chosen items either from MMLU or MBXP to train the models on. A test file containing these 100 items (split A in the paper) plus a new split of 100 items that is distinct from the training data can be found named [ORIGINAL_DATASET]\_test\_100.json in the inputs folder. The code for splitting the datasets is given in split_datasets.ipynb.
 
 ## Running the code
 - Replicate the figures from the paper on our data: open and run logscores.ipynb. Data used in the study are included in the repository, if you don't change the paths it should run out of the box on pre-computed data.
 
 
---- DATASET REBUILDING (CUDA GPU REQUIRED - approx. 200GPU.H on H100 80Go) ---
+--- DATASET RECOMPUTING (CUDA GPU REQUIRED - approx. 200GPU.H on H100 80Go) ---
 
 - Replicate training results: run the following commands in the stanford_alpaca repository to train some models on a dataset. See previous section for dataset naming.
 ```
