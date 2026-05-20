@@ -376,9 +376,13 @@ class AutoUnslothModel(HFModel):
         #hf_tokenizer = AutoTokenizer.from_pretrained(self.model_path)
         #hf_tokenizer.pad_token = '<s>'
 
+        print(self.model_path)
+
         hf_model, hf_tokenizer = FastLanguageModel.from_pretrained(
-            self.model_path,load_in_4bit=False,resize_model_vocab = 151666)
+            self.model_path,load_in_4bit=False,resize_model_vocab = 151666, local_files_only=True)
         hf_model = FastLanguageModel.for_inference(hf_model)
+
+        print('--------')
         
         #if 't5' in name:
         #    hf_model = T5ForConditionalGeneration.from_pretrained(os.path.join('..','..','model',name)).to(device)

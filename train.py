@@ -12,18 +12,20 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 
+import unsloth
 import copy
+import json
 import logging
+import io
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Sequence
 
 import torch
 import transformers
-import utils
 from torch.utils.data import Dataset
 from transformers import Trainer
 
-import unsloth
+
 
 IGNORE_INDEX = -100
 DEFAULT_PAD_TOKEN = "[PAD]"
@@ -56,6 +58,47 @@ PROMPT_DICT = {
     ),
 }
 
+def _make_w_io_base(f, mode: str):
+    if not isinstance(f, io.IOBase):
+        f_dirname = os.path.dirname(f)
+        if f_dirname != "":
+            os.makedirs(f_dirname, exist_ok=True)
+        f = open(f, mode=mode)
+    return f
+
+
+def _make_r_io_base(f, mode: str):
+    if not isinstance(f, io.IOBase):
+        f = open(f, mode=mode)
+    return f
+
+
+def jdump(obj, f, mode="w", indent=4, default=str):
+    """Dump a str or dictionary to a file in json format.
+
+    Args:
+        obj: An object to be written.
+        f: A string path to the location on disk.
+        mode: Mode for opening the file.
+        indent: Indent for storing json dictionaries.
+        default: A function to handle non-serializable entries; defaults to `str`.
+    """
+    f = _make_w_io_base(f, mode)
+    if isinstance(obj, (dict, list)):
+        json.dump(obj, f, indent=indent, default=default)
+    elif isinstance(obj, str):
+        f.write(obj)
+    else:
+        raise ValueError(f"Unexpected type: {type(obj)}")
+    f.close()
+
+
+def jload(f, mode="r"):
+    """Load a .json file into a dictionary."""
+    f = _make_r_io_base(f, mode)
+    jdict = json.load(f)
+    f.close()
+    return jdict
 @dataclass
 class ModelArguments:
     model_name_or_path: Optional[str] = field(default="facebook/opt-125m")
@@ -74,6 +117,7 @@ class TrainingArguments(transformers.TrainingArguments):
         default=512,
         metadata={"help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."},
     )
+    lora: bool = field(default=False)
 
 
 def smart_tokenizer_and_embedding_resize(
@@ -144,7 +188,7 @@ class SupervisedDataset(Dataset):
     def __init__(self, data_path: str, tokenizer: transformers.PreTrainedTokenizer):
         super(SupervisedDataset, self).__init__()
         logging.warning("Loading data...")
-        list_data_dict = utils.jload(data_path)
+        list_data_dict = jload(data_path)
 
         logging.warning("Formatting inputs...")
         prompt_input, prompt_no_input = PROMPT_DICT["prompt_input"], PROMPT_DICT["prompt_no_input"]
@@ -156,8 +200,6 @@ class SupervisedDataset(Dataset):
         #Removed eos for Q training
         #targets = [f"{example['output']}{tokenizer.eos_token}" for example in list_data_dict]
         targets = [f"{example['output']}" for example in list_data_dict]
-
-        print(targets)
 
         logging.warning("Tokenizing inputs... This may take some time...")
         data_dict = preprocess(sources, targets, tokenizer)
@@ -201,48 +243,42 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, dat
 def train():
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+    
+    if not training_args.lora:
+        model = transformers.AutoModelForCausalLM.from_pretrained(
+            model_args.model_name_or_path,
+            cache_dir=training_args.cache_dir,
+    #        device_map='auto',
+            torch_dtype=torch.bfloat16,
+        )
 
-    '''model = transformers.AutoModelForCausalLM.from_pretrained(
-        model_args.model_name_or_path,
-        cache_dir=training_args.cache_dir,
-#        device_map='auto',
-        torch_dtype=torch.bfloat16,
-    )'''
-
-    '''from accelerate import load_checkpoint_and_dispatch
-
-    model = load_checkpoint_and_dispatch(
-           model_args.model_name_or_path, 
-        checkpoint=,
-        device_map="auto", 
-        no_split_module_classes=['Block']
-    )'''
-
-    '''tokenizer = transformers.AutoTokenizer.from_pretrained(
+        tokenizer = transformers.AutoTokenizer.from_pretrained(
         model_args.model_name_or_path,
         cache_dir=training_args.cache_dir,
         model_max_length=training_args.model_max_length,
         padding_side="right",
         use_fast=False,
-    )'''
-    model, tokenizer = unsloth.FastLanguageModel.from_pretrained(
-        model_args.model_name_or_path,
-        load_in_4bit = True)
-
-    model = unsloth.FastLanguageModel.get_peft_model(
-        model,
-        r = 16, # Choose any number > 0 ! Suggested 8, 16, 32, 64, 128
-        target_modules = ["q_proj", "k_proj", "v_proj", "o_proj",
-                          "gate_proj", "up_proj", "down_proj",],
-        lora_alpha = 16,
-        lora_dropout = 0, # Supports any, but = 0 is optimized
-        bias = "none",    # Supports any, but = "none" is optimized
-        # [NEW] "unsloth" uses 30% less VRAM, fits 2x larger batch sizes!
-        use_gradient_checkpointing = "unsloth", # True or "unsloth" for very long context
-        #random_state = args.seed,
-        use_rslora = False,  # We support rank stabilized LoRA
-        loftq_config = None, # And LoftQ
-    )
+        )
+    else:
+        model, tokenizer = unsloth.FastLanguageModel.from_pretrained(
+            model_args.model_name_or_path,
+            load_in_4bit = True,
+            local_files_only=True)
+    
+        model = unsloth.FastLanguageModel.get_peft_model(
+            model,
+            r = 16, # Choose any number > 0 ! Suggested 8, 16, 32, 64, 128
+            target_modules = ["q_proj", "k_proj", "v_proj", "o_proj",
+                              "gate_proj", "up_proj", "down_proj",],
+            lora_alpha = 16,
+            lora_dropout = 0, # Supports any, but = 0 is optimized
+            bias = "none",    # Supports any, but = "none" is optimized
+            # [NEW] "unsloth" uses 30% less VRAM, fits 2x larger batch sizes!
+            use_gradient_checkpointing = "unsloth", # True or "unsloth" for very long context
+            #random_state = args.seed,
+            use_rslora = False,  # We support rank stabilized LoRA
+            loftq_config = None, # And LoftQ
+        )
     special_tokens_dict = dict()
     if tokenizer.pad_token is None:
         special_tokens_dict["pad_token"] = DEFAULT_PAD_TOKEN

@@ -8,8 +8,8 @@ import json
 import torch
 import math
 
-DATAPATH = 'data_rebuild'
-MODELPATH = 'LLMs'
+DATAPATH = 'inputs'
+MODELPATH = 'trained_models'
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model', type=str)
